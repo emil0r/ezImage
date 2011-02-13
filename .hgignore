@@ -1,0 +1,5 @@
+# global syntax
+syntax: glob
+.DS_Store
+Session.vim
+debug/cache
