@@ -13,6 +13,17 @@ except:
     IMAGECACHE_WEB = '/debug/cache/'
 
 CACHE = dict()
+ROTATE_CW = -1
+ROTATE_CCW = 1
+EXIF_ROTATION = 0x0112
+EXIF_ROTATION_HORIZANTAL = 1
+EXIF_ROTATION_MIRRORED_HORIZONTAL = 2
+EXIF_ROTATION_ROTATED_180 = 3
+EXIF_ROTATION_MIRRORED_VERTICAL = 4
+EXIF_ROTATION_MIRRORED_HORIZONTAL_ROTATED_90_CCW = 5
+EXIF_ROTATION_ROTATED_90_CW = 6
+EXIF_ROTATION_MIRRORED_HORIZONTAL_ROTATED_90_CW = 7
+EXIF_ROTATION_ROTATED_90_CCW = 8
 
 __doc__ = """
 Image wrapper around pil for distort, constrain, crop and pad. Adds caching on top.
@@ -77,6 +88,22 @@ class ezImage:
             'color': color
             }])
         return self
+
+    def rotate(self, angle, direction=ROTATE_CW, resample=0, expand=0):
+        self.commands.append(
+            ['rotate',
+             {'angle': angle,
+              'direction': direction if direction in [ROTATE_CW, ROTATE_CCW] else ROTATE_CW,
+              'resample': resample,
+              'expand': expand
+              }])
+        return self
+
+    def _rotate(self, angle, direction, resample, expand):
+        self.pilimg = self.pilimg.rotate(angle * direction, resample, expand)
+
+        return self
+    
     def _distort(self, width = 100, height = 100, imagefilter = Image.ANTIALIAS):
         self.pilimg = self.pilimg.resize((width, height), imagefilter)
         
@@ -130,7 +157,6 @@ class ezImage:
                     y = 0
                     width += x
             rectangle = (x, y, width, height)
-        print rectangle 
         self.pilimg = self.pilimg.crop(rectangle)    
         return self
     
@@ -192,6 +218,32 @@ class ezImage:
                 self.pilimg = Image.open(self.path, self.mode)
         except Exception as e:
             return False
+        if EXIF_ROTATION in self.pilimg._getexif():
+            rotation = self.pilimg._getexif()[EXIF_ROTATION]
+            if rotation == EXIF_ROTATION_ROTATED_90_CW:
+                self.commands.insert(0,
+                                     ['rotate',
+                                      {'angle': 90,
+                                       'direction': ROTATE_CW,
+                                       'resample': 0,
+                                       'expand': 0
+                                       }])
+            elif rotation == EXIF_ROTATION_ROTATED_90_CCW:
+                self.commands.insert(0,
+                                     ['rotate',
+                                      {'angle': 90,
+                                       'direction': ROTATE_CCW,
+                                       'resample': 0,
+                                       'expand': 0
+                                       }])
+            elif rotation == EXIF_ROTATION_ROTATED_180:
+                self.commands.insert(0,
+                                     ['rotate',
+                                      {'angle': 180,
+                                       'direction': ROTATE_CW,
+                                       'resample': 0,
+                                       'expand': 0
+                                       }])
         for command in self.commands:
             method = getattr(self, "_" + command[0])
             method(**command[1])
@@ -209,6 +261,7 @@ class ezImage:
         if hashmd5 not in CACHE:
             self.cache()
         return '<img src="{src}" alt="{alt}" title="{title}" />'.format(src=CACHE[hashmd5].webpath, alt=alt, title=title)
+    
     
     def cache(self):
         hashmd5 = self._gethash()
@@ -232,4 +285,13 @@ class ezImage:
 
             CACHE[hashmd5] = self
             return webpath
-            
+
+    def save(self, path):
+        # needs to be utf-8
+        success = self._execute()
+        if not success:
+            return False
+        self.pilimg.save(path)
+        del self.pilimg
+
+        return True            
