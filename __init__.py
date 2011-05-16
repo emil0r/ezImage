@@ -1,13 +1,14 @@
-import Image
-from hashlib import md5
 import os
 import os.path
 import urllib
 
+from hashlib import md5
+from PIL import Image
+
 try:
     from django.conf import settings
-    IMAGECACHE_DIR = settings.media_root + 'cache/images/'
-    IMAGECACHE_WEB = settings.media_url + 'cache/images/'
+    IMAGECACHE_DIR = settings.MEDIA_ROOT + 'cache/images/'
+    IMAGECACHE_WEB = settings.MEDIA_URL + 'cache/images/'
 except:
     IMAGECACHE_DIR = os.getcwd() + '/debug/cache/'
     IMAGECACHE_WEB = '/debug/cache/'
@@ -37,13 +38,13 @@ def open(infile, name=None, mode = "r"):
         path = infile.name
     else:
         path = infile
-    try:
-        if type(path) == unicode:
-            path = path.encode('utf-8')
-        format = path.rsplit('.',1)[1].lower()
-        return ezImage(path, mode, format, name)
-    except Exception as e:
-        return None
+#    try:
+    if type(path) == unicode:
+        path = path.encode('utf-8')
+    format = path.rsplit('.',1)[1].lower()
+    return ezImage(path, mode, format, name)
+    ## except Exception as e:
+    ##     return None
 
 class ezImage:
     def __init__(self, path, mode, format, name=None):
@@ -53,7 +54,7 @@ class ezImage:
         self.mode = mode
         self.format = format
         self.commands = []
-        if type(self.name): self.name = self.name.encode('utf-8')
+        if type(self.name) == unicode: self.name = self.name.encode('utf-8')
 
     def distort(self, width = 100, height = 100, imagefilter = Image.ANTIALIAS):
         self.commands.append(
