@@ -5,15 +5,7 @@ import urllib
 from hashlib import md5
 from PIL import Image
 
-try:
-    from django.conf import settings
-    IMAGECACHE_DIR = settings.MEDIA_ROOT + 'cache/images/'
-    IMAGECACHE_WEB = settings.MEDIA_URL + 'cache/images/'
-except:
-    IMAGECACHE_DIR = os.getcwd() + '/debug/cache/'
-    IMAGECACHE_WEB = '/debug/cache/'
 
-CACHE = dict()
 ROTATE_CW = -1
 ROTATE_CCW = 1
 EXIF_ROTATION = 0x0112
@@ -25,6 +17,17 @@ EXIF_ROTATION_MIRRORED_HORIZONTAL_ROTATED_90_CCW = 5
 EXIF_ROTATION_ROTATED_90_CW = 6
 EXIF_ROTATION_MIRRORED_HORIZONTAL_ROTATED_90_CW = 7
 EXIF_ROTATION_ROTATED_90_CCW = 8
+AUTOFIX_ROTATION = True
+
+try:
+    from django.conf import settings
+    IMAGECACHE_DIR = settings.EZIMAGE_CACHE_DIR
+    IMAGECACHE_WEB = settings.EZIMAGE_WEB_PATH
+    if hasattr(settings.EZIMAGE_AUTOFIX_ROTATION): AUTOFIX_ROTATION = settings.EZIMAGE_AUTOFIX_ROTATION
+except:
+    IMAGECACHE_DIR = os.getcwd() + '/debug/cache/'
+    IMAGECACHE_WEB = '/debug/cache/'
+
 
 __doc__ = """
 Image wrapper around pil for distort, constrain, crop and pad. Adds caching on top.
@@ -46,7 +49,40 @@ def open(infile, name=None, mode = "r"):
     ## except Exception as e:
     ##     return None
 
-class ezImage:
+class Cache(object):
+    def __init__(self):
+        try:
+            import pylibmc
+            from django.conf import settings
+            
+            if hasattr(settings.EZIMAGE_MC_USE) and settings.EZIMAGE_MC_USE:
+                mc_ip = settings.EZIMAGE_MC_IP if hasattr(settings.EZIMAGE_MC_IP) else '127.0.0.1:11211'
+                self._client = pylibmc.Client(mc_ip)
+                self._use_memcached = True
+            else:
+                1/0
+        except:
+            self._store = {}
+            self._use_memcached = False
+
+    def has(self, key):
+        if self._use_memcached:
+            return self._client.get(key) != None
+        return key in self._store
+
+    def get(self, key):
+        if self._use_memcached:
+            return self._client.get(key)
+        return self._store[key]
+    def set(self, key, value):
+        if self._use_memcached:
+            self._client.set(key, value)
+        else:
+            self._store[key] = value
+CACHE = Cache()
+
+
+class ezImage(object):
     def __init__(self, path, mode, format, name=None):
         
         self.path = path
@@ -196,13 +232,13 @@ class ezImage:
 
     def _gethash(self):
         try:
-            return md5( '{size}{time}{path}{commands}'.format(size=os.path.getsize(self.path), time=os.path.getmtime(self.path), path=self.path, commands=self.commands)).hexdigest()
+            return md5( '{size}{time}{path}{commands}'.format(size=os.path.getsize(self.path), time=os.path.getmtime(self.path), path=self.path, commands=self.commands))
         except UnicodeDecodeError as e:
             pass
 
     def size(self):
         hashmd5 = self._gethash()
-        path = '{dir}{hash}.{format}'.format(dir=IMAGECACHE_DIR, hash=hashmd5, format=self.format)
+        path = '{dir}{hash}.{format}'.format(dir=IMAGECACHE_DIR, hash=hashmd5.hexdigest(), format=self.format)
         if os.path.isfile(path):
             return os.path.getsize(path)
         
@@ -219,7 +255,7 @@ class ezImage:
                 self.pilimg = Image.open(self.path, self.mode)
         except Exception as e:
             return False
-        if EXIF_ROTATION in self.pilimg._getexif():
+        if hasattr(self.pilimg, '_getexif') and EXIF_ROTATION in self.pilimg._getexif() and AUTOFIX_ROTATION:
             rotation = self.pilimg._getexif()[EXIF_ROTATION]
             if rotation == EXIF_ROTATION_ROTATED_90_CW:
                 self.commands.insert(0,
@@ -259,20 +295,20 @@ class ezImage:
         hashmd5 = self._gethash()
         if alt == '' and use_name: alt = self.name
         if title == '' and use_name: title = self.name
-        if hashmd5 not in CACHE:
+        if not CACHE.has(hashmd5.digest()):
             self.cache()
-        return '<img src="{src}" alt="{alt}" title="{title}" />'.format(src=CACHE[hashmd5].webpath, alt=alt, title=title)
+        return '<img src="{src}" alt="{alt}" title="{title}" />'.format(src=CACHE.get(hashmd5)['webpath'], alt=alt, title=title)
     
     
     def cache(self):
         hashmd5 = self._gethash()
 
-        if hashmd5 in CACHE:
-            return CACHE[hashmd5].webpath
+        if CACHE.has(hashmd5.digest()):
+            return CACHE.get(hashmd5.digest())['webpath']
         else:
             # needs to be utf-8
-            hdpath = '{dir}{name}-{hash}.{format}'.format(dir=IMAGECACHE_DIR, name=self._sanitize_name(), hash=hashmd5, format=self.format)
-            webpath = '{web}{name}-{hash}.{format}'.format(web=IMAGECACHE_WEB, name=self._sanitize_name(True), hash=hashmd5, format=self.format)
+            hdpath = '{dir}{name}-{hash}.{format}'.format(dir=IMAGECACHE_DIR, name=self._sanitize_name(), hash=hashmd5.hexdigest(), format=self.format)
+            webpath = '{web}{name}-{hash}.{format}'.format(web=IMAGECACHE_WEB, name=self._sanitize_name(True), hash=hashmd5.hexdigest(), format=self.format)
             if not os.path.isfile(hdpath):
                 success = self._execute()
                 if not success:
@@ -280,11 +316,7 @@ class ezImage:
                 self.pilimg.save(hdpath)
                 del self.pilimg
 
-            self.webpath = webpath
-            self.hdpath = hdpath
-
-
-            CACHE[hashmd5] = self
+            CACHE.set(hashmd5.hexdigest(), {'webpath': webpath, 'hdpath': hdpath})
             return webpath
 
     def save(self, path):
