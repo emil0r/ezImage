@@ -35,8 +35,7 @@ Author: Emil Bengtsson <emil@emil0r.com>
 """
 
 
-def open(infile, name=None, mode = "r"):
-    
+def open(infile, name=None, mode = "r"):    
     if isinstance(infile, file):
         path = infile.name
     else:
@@ -52,6 +51,7 @@ def open(infile, name=None, mode = "r"):
 class Cache(object):
     def __init__(self):
         try:
+            ## feels increadibly hacky. not a good solution
             import pylibmc
             from django.conf import settings
             
@@ -59,7 +59,7 @@ class Cache(object):
                 mc_ip = settings.EZIMAGE_MC_IP if hasattr(settings.EZIMAGE_MC_IP) else '127.0.0.1:11211'
                 self._client = pylibmc.Client(mc_ip)
                 self._use_memcached = True
-            else:
+            else: ## fail
                 1/0
         except:
             self._store = {}
@@ -92,7 +92,11 @@ class ezImage(object):
         self.commands = []
         if type(self.name) == unicode: self.name = self.name.encode('utf-8')
 
-    def distort(self, width = 100, height = 100, imagefilter = Image.ANTIALIAS):
+    def distort(self, width=100, height=100, imagefilter=Image.ANTIALIAS):
+        """
+        Distorts the image to width and height.
+        Default values: width=100, height=100, imagefilter=Image.ANTIALIAS
+        """
         self.commands.append(
             ['distort',
             {
@@ -101,7 +105,11 @@ class ezImage(object):
             'imagefilter': imagefilter
             }])
         return self
-    def constrain(self, width = 100, height = 100, imagefilter = Image.ANTIALIAS):
+    def constrain(self, width=100, height=100, imagefilter=Image.ANTIALIAS):
+        """
+        Constrains the image to width and height.
+        Default values: width=100, height=100, imagefilter=Image.ANTIALIAS
+        """
         self.commands.append(
             ['constrain',
              {
@@ -111,13 +119,23 @@ class ezImage(object):
             }])
         return self
     def crop(self, rectangle=()):
+        """
+        Crops the image according to the rectangle. Absolute values.
+    	rectangle = (left, top, right, bottom)
+        """
         self.commands.append(
             ['crop',
             {
             'rectangle': rectangle
             }])
         return self
-    def pad(self, padding = None, color = (255,255,255,255)):
+    def pad(self, padding=None, color=(255,255,255,255)):
+        """
+        Adds padding to the image. Color can have different values depending on the type of image.
+        padding: (left, top, right, bottom). Values can't be below 0.
+        color: Depends on the mode, look into PIL documentation.
+        Default values: padding=None, color=(255,255,255,255)
+        """
         self.commands.append(
             ['pad',
              {
@@ -126,7 +144,11 @@ class ezImage(object):
             }])
         return self
 
-    def rotate(self, angle, direction=ROTATE_CW, resample=0, expand=0):
+    def rotate(self, angle=0, direction=ROTATE_CW, resample=0, expand=0):
+        """
+        Rotates the image.
+        Default values: angle=0, direction=ROTATE_CW, resample=0, expand=0
+        """
         self.commands.append(
             ['rotate',
              {'angle': angle,
@@ -152,9 +174,6 @@ class ezImage(object):
         return self
     
     def _crop(self, rectangle):
-        """
-    	rectangle = left, top, right, bottom
-        """
         if len(rectangle) == 0:
             w, h = self.pilimg.size
             if w > h:
@@ -198,10 +217,6 @@ class ezImage(object):
         return self
     
     def _pad(self, padding = None, color = (255,255,255,255)):
-        """
-        padding: left, top, right, bottom. Values can't be below 0.
-        color: colors depending on the mode, defaults to white and opaque
-        """
         if padding == None:
             top = bottom = left = right = 0
             if self.pilimg.size[0] > self.pilimg.size[1]:
