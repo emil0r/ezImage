@@ -30,7 +30,7 @@ except:
 
 
 __doc__ = """
-Image wrapper around pil for distort, constrain, crop, pad and rotate. Adds caching on top.
+Image wrapper around PIL for distort, constrain, crop, pad and rotate. Adds caching on top.
 Author: Emil Bengtsson <emil@emil0r.com>
 """
 
